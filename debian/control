@@ -1,0 +1,19 @@
+Source: es-to-es
+Section: utils
+Priority: optional
+Maintainer: Florian Bezdeka <florian.bezdeka@siemens.com>
+Build-Depends: cmake,
+               gcc (>= 10),
+               clang, llvm,
+               debhelper (>= 10),
+               libxdp-dev,
+Standards-Version: 4.5.1
+Homepage: https://code.siemens.com/tsn-inn-de/es_to_es
+
+Package: es-to-es
+Architecture: any
+Multi-Arch: foreign
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Test application for TSN measurements
+ Application for playing around with HW timestamps, XDP support and many more
+ TSN related stuff.

@@ -1,0 +1,140 @@
+# SPDX-FileCopyrightText: Copyright 2025 Siemens AG
+#
+# SPDX-License-Identifier: Apache-2.0
+
+###
+# Example for a QoS deployment of a talker and a listener including prometheus exporter in FabOS environment
+# Talker is pinned to IPC1, listener to IPC2
+# Following values must be adapted
+# - names (application, namespace, stream)
+# - images and pull secrets
+# - parameters for talker and listener
+# Monitoring in Grafana is only possible if specific naming scheme is respected
+###
+apiVersion: qos-scheduler.siemens.com/v1alpha1
+kind: ApplicationGroup
+metadata:
+  name: applicationgroup-tsn-p1
+  namespace: fabos-lab-jochen
+spec:
+  minMember: 1
+---
+apiVersion: qos-scheduler.siemens.com/v1alpha1
+kind: Application
+metadata:
+  name: tsnapp-1
+  namespace: fabos-lab-jochen
+  labels:
+    application-group: applicationgroup-tsn-p1
+  # These get copied to all pods generated for this app.
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9102"
+spec:
+  workloads:
+  - basename: talker-p1
+    template:
+      metadata:
+        labels:
+          app: talker-p1
+      spec:
+        imagePullSecrets:
+          - name: tsn-inn-registry-access
+        hostNetwork: false
+        containers:
+          - name: talker-p1
+            image: cr.siemens.com/tsn-inn-de/es_to_es/prometheus-exporter:v0.0.7
+            imagePullPolicy: Always
+            tty: true # why do I have to set this? Otherwise log outputs are not visible
+            env:
+            - name: TSN_APP_MODE
+              value: "-t"
+            - name: TSN_APP_TALKER_DST_DNS
+              value: "svc-t1-fabos-lab-jochen.fabos-lab-jochen.svc.cluster.local"
+            - name: TSN_APP_TALKER_PACKETS
+              value: "15000"
+            command: ["/bin/bash"]
+            #args: ["-c", "./tsn_test_app -t -u -N -d svc-t1-fabos-lab-jochen.fabos-lab-jochen.svc.cluster.local"]
+            args: ["-c", "./start.sh"]
+            securityContext:
+              # this should be removed as soon as we do not longer use raw sockets
+              capabilities:
+                add:
+#                  - NET_RAW
+                  - SYS_NICE
+            resources:
+              limits:
+                cpu: 100m
+                memory: 200Mi
+              requests:
+                cpu: 100m
+                memory: 200Mi
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: siemens.com.qosscheduler.ipc1
+                      operator: Exists
+    interfaces:
+    - otherWorkload:
+        basename: listener-p1
+        applicationName: tsnapp-1
+        port: 7511
+      basename: "t1"
+      bandwidth: "5M"
+      framesize: "150"
+      sendInterval: "1e-3"
+      maxDelay: "100e-6"
+  - basename: listener-p1
+    template:
+      metadata:
+        labels:
+          app: listener-p1
+      spec:
+        imagePullSecrets:
+          - name: tsn-inn-registry-access
+        hostNetwork: false
+        containers:
+          - name: listener-p1
+            image: cr.siemens.com/tsn-inn-de/es_to_es/prometheus-exporter:v0.0.7
+            imagePullPolicy: Always
+            tty: true # why do I have to set this? Otherwise log outputs are not visible
+            #command: ["./tsn_test_app"]
+            command: ["/bin/bash"]
+            #args: ["-l", "-u", "-I", "-d", "10.198.153.115"]
+            args: ["-c", "./start.sh"]
+            env:
+            - name: TSN_APP_EXPORTER_MODE
+              value: "k8s"
+            ports:
+              - containerPort: 9102
+                protocol: TCP
+            securityContext:
+              capabilities:
+                add:
+#                  - NET_RAW
+                  - SYS_NICE
+            resources:
+              limits:
+                cpu: 100m
+                memory: 200Mi
+              requests:
+                cpu: 100m
+                memory: 200Mi
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: siemens.com.qosscheduler.ipc2
+                      operator: Exists
+#    interfaces:
+#    - otherWorkload:
+#        basename: talker-prom
+#        applicationName: tsnapp-1
+#        port: 7511
+#      basename: "t2"
+#      bandwidth: "2M"
+#      maxDelay: "10"
+#      framesize: "150"

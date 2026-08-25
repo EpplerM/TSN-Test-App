@@ -1,0 +1,100 @@
+# SPDX-FileCopyrightText: Copyright 2025 Siemens AG
+#
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tsn-test-app-talker
+  namespace: default
+  labels:
+    app: tsn-test-app-talker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tsn-test-app-talker
+  template:
+    metadata:
+      labels:
+        app: tsn-test-app-talker
+    spec:
+      imagePullSecrets:
+        - name: tsn-inn-registry-access
+      hostNetwork: true
+      containers:
+        - name: tsn-test-app-talker
+          image: cr.siemens.com/tsn-inn-de/es_to_es/es2es:v0.0.3
+          tty: true # why do I have to set this? Otherwise log outputs are not visible
+          command: ["./tsn_test_app"]
+          args: ["-t", "-i", "enp2s0", "-s", "AL", "-N"]
+          securityContext:
+            # this should be removed as soon as we do not longer use raw sockets
+            privileged: true
+            capabilities:
+              add:
+                - NET_RAW
+          resources:
+            limits:
+              cpu: 100m
+              memory: 200Mi
+            requests:
+              cpu: 100m
+              memory: 200Mi
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - ipc1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tsn-test-app-listener
+  namespace: default
+  labels:
+    app: tsn-test-app-listener
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tsn-test-app-listener
+  template:
+    metadata:
+      labels:
+        app: tsn-test-app-listener
+    spec:
+      imagePullSecrets:
+        - name: tsn-inn-registry-access
+      hostNetwork: true
+      containers:
+        - name: tsn-test-app-listener
+          image: cr.siemens.com/tsn-inn-de/es_to_es/es2es:v0.0.3
+          tty: true # why do I have to set this? Otherwise log outputs are not visible
+          command: ["./tsn_test_app"]
+          args: ["-l", "-i", "enp2s0", "-s", "AL", "-I"]
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+                - NET_RAW
+          resources:
+            limits:
+              cpu: 100m
+              memory: 200Mi
+            requests:
+              cpu: 100m
+              memory: 200Mi
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - ipc2

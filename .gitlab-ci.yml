@@ -1,0 +1,153 @@
+# SPDX-FileCopyrightText: Copyright 2025 Siemens AG
+#
+# SPDX-License-Identifier: Apache-2.0
+
+variables:
+  CI_REGISTRY_PATH: cr.siemens.com/tsn-inn-de/es_to_es
+  ES2ES_IMAGE: "$CI_REGISTRY_PATH/es2es"
+
+
+stages:
+  - build
+  - package
+
+include:
+  - local: kaniko-setup.yml
+
+.gitsubmodule:
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive
+
+.proxy:
+  variables:
+    http_proxy: "${CODE_PROXY}"
+    https_proxy: "${CODE_PROXY}"
+    no_proxy: "${CODE_NO_PROXY},ses-lava-master.ppmd.siemens.net"
+
+.build:
+  extends:
+    - .proxy
+    - .gitsubmodule
+  image: debian:bookworm-slim
+  stage: build
+  rules:
+    - changes:
+        - src/*
+  artifacts:
+    name: ${CI_COMMIT_TAG}
+    expire_in: 4 weeks
+    paths:
+      - artifacts/
+
+.cmake-build:
+  extends: .build
+  before_script:
+    - mkdir build
+  after_script:
+    - mkdir artifacts
+    - mv build/src/tsn_test_app artifacts
+    - mv build/src/bpf/eth_type_filter.o artifacts
+
+build-deb-pkg:
+   extends: .build
+   script:
+     - apt-get update
+     - apt-get install -y devscripts
+     - mk-build-deps
+         -ir
+         -t "apt-get
+         -o Debug::pkgProblemResolver=yes
+         --no-install-recommends
+         -o APT::Get::Assume-Yes=1"
+     - dpkg-buildpackage -b
+     - mkdir artifacts
+     - mv ../*.deb artifacts
+
+build-x86:
+  extends: .cmake-build
+  script:
+    - apt-get update
+    - apt-get install -y devscripts
+    - mk-build-deps
+        -ir
+        -t "apt-get
+        -o Debug::pkgProblemResolver=yes
+        --no-install-recommends
+        -o APT::Get::Assume-Yes=1"
+    - cd build
+    - cmake .. -DBPF_CFLAGS=-I/usr/include/x86_64-linux-gnu
+    - cmake --build .
+
+build-x86-staticlib:
+  extends: .cmake-build
+  script:
+    - apt-get update
+    - apt-get install -y
+        cmake gcc clang llvm libelf-dev pkg-config m4 bpftool libpcap-dev
+    - cd build
+    - cmake .. -DUSE_LIBXDP_FROM_SUBMODULE=ON -DBPF_CFLAGS=-I/usr/include/x86_64-linux-gnu
+    - cmake --build .
+
+build-armhf:
+  extends: .cmake-build
+  script:
+    - dpkg --add-architecture armhf
+    - apt-get update
+    - apt-get install -y
+        cmake clang llvm libbpf-dev pkg-config m4
+        bpftool libpcap-dev:armhf
+        gcc-arm-linux-gnueabihf crossbuild-essential-armhf
+        libelf1:armhf libelf-dev:armhf
+    - cd build
+    - cmake ..
+        -DUSE_LIBXDP_FROM_SUBMODULE=ON
+        -DCMAKE_TOOLCHAIN_FILE=../cmake/armhf-toolchain.cmake
+        -DBPF_CFLAGS=-I/usr/include/arm-linux-gnueabihf
+    - cmake --build .
+
+build-arm64:
+  extends: .cmake-build
+  script:
+    - dpkg --add-architecture arm64
+    - apt-get update
+    - apt-get install -y
+        cmake clang llvm libbpf-dev pkg-config m4
+        bpftool libpcap-dev:arm64
+        gcc-aarch64-linux-gnu crossbuild-essential-arm64
+        libelf1:arm64 libelf-dev:arm64
+    - cd build
+    - cmake ..
+        -DUSE_LIBXDP_FROM_SUBMODULE=ON
+        -DCMAKE_TOOLCHAIN_FILE=../cmake/arm64-toolchain.cmake
+        -DBPF_CFLAGS=-I/usr/include/aarch64-linux-gnu
+    - cmake --build .
+
+package:
+  stage:
+    package
+  extends:
+    - .proxy
+    - .gitsubmodule
+    - .kaniko-setup
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    - dir=${CI_PROJECT_DIR}
+    - ${KANIKO} --dockerfile ${dir}/Dockerfile --context ${dir}
+      --build-arg GITREVISION="$CI_COMMIT_TAG-$CI_COMMIT_SHORT_SHA"
+      --destination $ES2ES_IMAGE:$CI_COMMIT_TAG
+
+tsn_app_listener_exporter:
+  stage:
+    package
+  extends:
+    - .proxy
+    - .gitsubmodule
+    - .kaniko-setup
+  script:
+    - dir=${CI_PROJECT_DIR}
+    - ${KANIKO} --dockerfile ${dir}/prometheus_exporter/Dockerfile --context ${dir}
+      --build-arg GITREVISION="$CI_COMMIT_TAG-$CI_COMMIT_SHORT_SHA"
+      --destination $CI_REGISTRY_PATH/prometheus-exporter:$CI_COMMIT_TAG
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_TAG

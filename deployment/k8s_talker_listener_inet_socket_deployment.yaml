@@ -1,0 +1,116 @@
+# SPDX-FileCopyrightText: Copyright 2025 Siemens AG
+#
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tsn-test-app-talker-inet
+  namespace: default
+  labels:
+    app: tsn-test-app-talker-inet
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tsn-test-app-talker-inet
+  template:
+    metadata:
+      labels:
+        app: tsn-test-app-talker-inet
+    spec:
+      imagePullSecrets:
+        - name: tsn-inn-registry-access
+      hostNetwork: true  
+      containers:
+        - name: tsn-test-app-talker-inet
+          image: cr.siemens.com/tsn-inn-de/es_to_es/es2es:v0.0.3
+          tty: true # why do I have to set this? Otherwise log outputs are not visible
+          command: ["/bin/bash"]
+          args: ["-c", "./tsn_test_app -t -u -d $(getent hosts tsn-test-app-listener-inet-service.default.svc.cluster.local | awk '{ print $1 }') -i enp2s0 -N"]
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+                - NET_RAW
+                - SYS_NICE
+          resources:
+            limits:
+              cpu: 100m
+              memory: 200Mi
+            requests:
+              cpu: 100m
+              memory: 200Mi
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - ipc1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tsn-test-app-listener-inet
+  namespace: default
+  labels:
+    app: tsn-test-app-listener-inet
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tsn-test-app-listener-inet
+  template:
+    metadata:
+      labels:
+        app: tsn-test-app-listener-inet
+    spec:
+      imagePullSecrets:
+        - name: tsn-inn-registry-access
+      hostNetwork: true
+      containers:
+        - name: tsn-test-app-listener-inet
+          image: cr.siemens.com/tsn-inn-de/es_to_es/es2es:v0.0.3
+          tty: true # why do I have to set this? Otherwise log outputs are not visible
+          command: ["./tsn_test_app"]
+          args: ["-l", "-u", "-i", "enp2s0", "-I"]
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+                - NET_RAW
+                - SYS_NICE
+          resources:
+            limits:
+              cpu: 100m
+              memory: 200Mi
+            requests:
+              cpu: 100m
+              memory: 200Mi
+          ports:
+            - containerPort: 7511
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - ipc2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tsn-test-app-listener-inet-service
+  namespace: default
+spec:
+  selector:
+    app: tsn-test-app-listener-inet
+  ports:
+    - protocol: TCP
+      port: 7511
+      targetPort: 7511

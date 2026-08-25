@@ -1,0 +1,143 @@
+# SPDX-FileCopyrightText: Copyright 2025 Siemens AG
+#
+# SPDX-License-Identifier: Apache-2.0
+
+###
+# Example for a standard kubernetes deployment of a talker and a listener including prometheus exporter in FabOS environment
+# Talker is pinned to IPC1, listener to IPC2
+# Following values must be adapted
+# - names (application, namespace, stream)
+# - images and pull secrets
+# - parameters for talker and listener
+# Monitoring in Grafana is only possible if specific naming scheme is respected
+###
+apiVersion: v1
+kind: Service
+metadata:
+  name: tsnapp-9-listener-p9-service
+  namespace: fabos-lab-jochen
+spec:
+  selector:
+    app: tsnapp-9-listener-p9
+  ports:
+    - protocol: UDP
+      port: 7511
+      targetPort: 7511
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tsnapp-9-talker-p9
+  namespace: fabos-lab-jochen
+  labels:
+    app: tsnapp-9-talker-p9
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tsnapp-9-talker-p9
+  template:
+    metadata:
+      labels:
+        app: tsnapp-9-talker-p9
+    spec:
+      imagePullSecrets:
+        - name: tsn-inn-registry-access
+      hostNetwork: false
+      containers:
+        - name: tsnapp-9-talker-p9
+          image: cr.siemens.com/tsn-inn-de/es_to_es/prometheus-exporter:latest
+          imagePullPolicy: Always
+          tty: true # why do I have to set this? Otherwise log outputs are not visible
+          env:
+           - name: TSN_APP_MODE
+             value: "-t"
+           - name: TSN_APP_TALKER_DST_DNS
+             value: "tsnapp-9-listener-p9-service.fabos-lab-jochen.svc.cluster.local"
+           - name: TSN_APP_TALKER_PACKETS
+             value: "15000"
+          command: ["/bin/bash"]
+          #args: ["-c", "./tsn_test_app -t -u -N -d svc-t1-fabos-lab-jochen.fabos-lab-jochen.svc.cluster.local"]
+          args: ["-c", "./start.sh"]
+          #command: ["/bin/bash"]
+          #args: ["-c", "./tsn_test_app -t -N -u -d $(dig +short tsn-app-listener-service-service.fabos-lab-jochen.svc.cluster.local)"]
+          #args: ["-c", "./tsn_test_app -t -N -u -d tsn-app-listener-service-service.fabos-lab-jochen.svc.cluster.local"]
+          securityContext:
+            capabilities:
+              add:
+#                - NET_RAW
+                - SYS_NICE
+          resources:
+            limits:
+              cpu: 100m
+              memory: 200Mi
+            requests:
+              cpu: 100m
+              memory: 200Mi
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - ipc1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tsnapp-9-listener-p9
+  namespace: fabos-lab-jochen
+  labels:
+    app: tsnapp-9-listener-p9
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tsnapp-9-listener-p9
+  template:
+    metadata:
+      labels:
+        app: tsnapp-9-listener-p9
+    spec:
+      imagePullSecrets:
+        - name: tsn-inn-registry-access
+      hostNetwork: false
+      containers:
+        - name: tsnapp-9-listener-p9
+          image: cr.siemens.com/tsn-inn-de/es_to_es/prometheus-exporter:latest
+          imagePullPolicy: Always
+          tty: true # why do I have to set this? Otherwise log outputs are not visible
+          command: ["/bin/bash"]
+          #args: ["-l", "-u", "-I", "-d", "10.198.153.115"]
+          args: ["-c", "./start.sh"]
+          env:
+          - name: TSN_APP_EXPORTER_MODE
+            value: "k8s"
+          ports:
+            - containerPort: 9102
+              protocol: TCP
+#          command: ["./tsn_test_app"]
+#          args: ["-l", "-u", "-I", "-d", "10.198.153.115"]
+          securityContext:
+            capabilities:
+              add:
+#                - NET_RAW
+                - SYS_NICE
+          resources:
+            limits:
+              cpu: 100m
+              memory: 200Mi
+            requests:
+              cpu: 100m
+              memory: 200Mi
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - ipc2

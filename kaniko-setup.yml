@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: Copyright 2025 Siemens AG
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Copied + adapted from tsn-inn-de/monc.
+
+.kaniko-setup:
+  variables:
+    http_proxy: $CODE_PROXY
+    https_proxy: $CODE_PROXY
+    no_proxy: "127.0.0.1,localhost,.siemens.de,.siemens.net,.siemens.com,.siemens.io"
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  before_script:
+    - mkdir -p /kaniko/.docker
+    - KANIKO="/kaniko/executor"
+    - f1="\"username\":\"${CI_REGISTRY_USER}\""
+    - f2="\"password\":\"${CI_REGISTRY_PASSWORD}\""
+    - KANIKOCFG="\"auths\":{\"${CI_REGISTRY}\":{${f1},${f2}}}"
+    - if [ "${http_proxy}" -o "${https_proxy}" ]; then
+    -     f1="\"http_proxy\":\"${http_proxy}\""
+    -     f2="\"https_proxy\":\"${https_proxy}\""
+    -     f3="\"no_proxy\":\"${no_proxy}\""
+    -     proxies="\"proxies\":{\"default\":{${f1},${f2},${f3}}}"
+    -     KANIKOCFG=${KANIKOCFG},${proxies}
+    -     o1="--build-arg http_proxy=${http_proxy}"
+    -     o2="--build-arg https_proxy=${https_proxy}"
+    -     o3="--build-arg no_proxy=${no_proxy}"
+    -     o4="--cleanup"
+    -     KANIKO="${KANIKO} ${o1} ${o2} ${o3} ${o4}"
+    - fi
+    - echo "{ ${KANIKOCFG} }" > /kaniko/.docker/config.json

@@ -1,0 +1,7 @@
+
+[submodule "src/libbpf"]
+	path = src/libbpf
+	url = https://github.com/libbpf/libbpf.git
+[submodule "src/libxdp"]
+	path = src/libxdp
+	url = https://github.com/xdp-project/xdp-tools.git

@@ -1,0 +1,9 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	dh_auto_configure -- \
+	    -DBPF_CFLAGS=-I/usr/include/x86_64-linux-gnu \
+	    -DE2E_BPF_PROGRAM_PATH=/usr/share/e2e/eth_type_filter.o
